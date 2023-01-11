@@ -1,0 +1,60 @@
+name: Trigger auto deployment for album-ui
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - 'src/**'
+    - '.github/workflows/album-ui-AutoDeployTrigger-5c05df65-bf19-49c7-9e5f-38b69189ec57.yml'
+
+  # Allow mannually trigger 
+  workflow_dispatch:      
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to container registry
+        uses: docker/login-action@v1
+        with:
+          registry: acaalbumstimr1972.azurecr.io
+          username: ${{ secrets.ALBUMUI_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALBUMUI_REGISTRY_PASSWORD }}
+
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: acaalbumstimr1972.azurecr.io/album-ui:${{ github.sha }}
+          file: ./src/Dockerfile
+          context: ./src/
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.ALBUMUI_AZURE_CREDENTIALS }}
+
+
+      - name: Deploy to containerapp
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n album-ui -g my-container-apps --server acaalbumstimr1972.azurecr.io --username  ${{ secrets.ALBUMUI_REGISTRY_USERNAME }} --password ${{ secrets.ALBUMUI_REGISTRY_PASSWORD }}
+            az containerapp update -n album-ui -g my-container-apps --image acaalbumstimr1972.azurecr.io/album-ui:${{ github.sha }}
